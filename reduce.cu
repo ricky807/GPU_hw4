@@ -58,7 +58,7 @@ float * fillArray(int n, int upbound)
 
    /* generate n random numbers from 0 to unbound - 1 */
    for( i = 0 ; i < n ; i++ ) {
-      ret[i] = rand() % upbound * 1.0f;
+      ret[i] = rand() % upbound * 1.0f/10000.0f;
    }
    return ret;
 }
@@ -102,6 +102,34 @@ __global__ void reduce2(float *in, float *out, int n)
     {
         // modulo arithmetic is slow!
         if ((tid % (2*s)) == 0)
+        {
+            sdata[tid] += sdata[tid + s]; //sum number stored in low index
+        }
+
+        __syncthreads();
+    }
+
+    // write result for this block to global mem
+    if (tid == 0) out[blockIdx.x] = sdata[0];
+}
+
+__global__ void reduce3(float *in, float *out, int n)
+{
+    extern __shared__ float sdata[];
+
+    // load shared mem
+    unsigned int tid = threadIdx.x;
+    unsigned int i = blockIdx.x*blockDim.x + threadIdx.x;
+
+    sdata[tid] = (i < n) ? in[i] : 0;
+
+    __syncthreads();
+
+    // do reduction in shared mem
+    for (int s = blockDim.x/2; s > 1 ; s/2)
+    {
+        // modulo arithmetic is slow!
+        if (tid + s < s*2)
         {
             sdata[tid] += sdata[tid + s]; //sum number stored in low index
         }
