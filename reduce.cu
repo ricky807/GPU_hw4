@@ -116,14 +116,15 @@ __global__ void reduce2(float *in, float *out, int n)
 __global__ void reduce3(float *in, float *out, int n)
 {
     extern __shared__ float sdata[];
-
-    // load shared mem
+    
     unsigned int tid = threadIdx.x;
     unsigned int t = threadIdx.x * 2;
     unsigned int i = (blockIdx.x*blockDim.x + threadIdx.x)*2;
 
+    // load into shared memory 2 at a time
     sdata[t] = (i < n) ? in[i] : 0;
     sdata[t+1] = (i + 1 < n) ? in[i + 1] : 0;
+
     /*
     __syncthreads();
 
@@ -139,19 +140,17 @@ __global__ void reduce3(float *in, float *out, int n)
     }
     */
     __syncthreads();
-    // do reduction in shared mem
-    for (int s = blockDim.x; s >= 1 ; s/=2)
+    // do reduction in shared memory with tid plus s while cutting s in half each iteration
+    for (int s = blockDim.x; s >= 1; s/=2)
     {
         if (tid + s < s*2)
         {
-            sdata[tid] += sdata[tid + s]; //sum number stored in low index
+            sdata[tid] += sdata[tid + s];
         }
-
         __syncthreads();
 
         
     }
-
     // write result for this block to global mem
     if (tid == 0) out[blockIdx.x] = sdata[0];
 }
