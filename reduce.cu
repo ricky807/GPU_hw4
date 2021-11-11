@@ -58,7 +58,7 @@ float * fillArray(int n, int upbound)
 
    /* generate n random numbers from 0 to unbound - 1 */
    for( i = 0 ; i < n ; i++ ) {
-      ret[i] = rand() % upbound * 1.0f/10000.0f;
+      ret[i] = rand() % upbound * 1.0f;
    }
    return ret;
 }
@@ -119,22 +119,37 @@ __global__ void reduce3(float *in, float *out, int n)
 
     // load shared mem
     unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x*blockDim.x + threadIdx.x;
+    unsigned int t = threadIdx.x * 2;
+    unsigned int i = (blockIdx.x*blockDim.x + threadIdx.x)*2;
 
-    sdata[tid] = (i < n) ? in[i] : 0;
-
+    sdata[t] = (i < n) ? in[i] : 0;
+    sdata[t+1] = (i + 1 < n) ? in[i + 1] : 0;
+    /*
     __syncthreads();
 
-    // do reduction in shared mem
-    for (int s = blockDim.x/2; s > 1 ; s/2)
+    int e;
+    if(blockIdx.x*blockDim.x + threadIdx.x == 0)
     {
-        // modulo arithmetic is slow!
+       // printf("block size %d ", blockDim.x);
+        for(e = 0; e < blockDim.x*2; e ++)
+            printf("%5.0f ", sdata[e]);
+
+        printf("\n------------------------------------\n");
+
+    }
+    */
+    __syncthreads();
+    // do reduction in shared mem
+    for (int s = blockDim.x; s >= 1 ; s/=2)
+    {
         if (tid + s < s*2)
         {
             sdata[tid] += sdata[tid + s]; //sum number stored in low index
         }
 
         __syncthreads();
+
+        
     }
 
     // write result for this block to global mem
@@ -175,7 +190,7 @@ void runCUDA( float *arr, int  n_old, int tile_width)
    }
    int num_block = ceil(n / (float)tile_width);
    printf("Num of blocks is %d\n", num_block);
-   dim3 block(tile_width, 1, 1);
+   dim3 block(tile_width/2, 1, 1);
    dim3 grid(num_block, 1, 1);
 
    // allocate storage for the device
@@ -205,7 +220,7 @@ void runCUDA( float *arr, int  n_old, int tile_width)
    cudaEventRecord(launch_begin,0);
    while( 1 )
    {
-       reduce2<<<grid, block, tile_width * sizeof(float)>>>(d_in, d_out, num_in);
+       reduce3<<<grid, block, tile_width * sizeof(float)>>>(d_in, d_out, num_in);
        check_cuda_errors(__FILE__, __LINE__);
        cudaDeviceSynchronize();
 
