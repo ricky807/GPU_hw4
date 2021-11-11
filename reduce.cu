@@ -113,6 +113,48 @@ __global__ void reduce2(float *in, float *out, int n)
     if (tid == 0) out[blockIdx.x] = sdata[0];
 }
 
+__global__ void reduce3(float *in, float *out, int n)
+{
+    extern __shared__ float sdata[];
+    
+    unsigned int tid = threadIdx.x;
+    unsigned int t = threadIdx.x * 2;
+    unsigned int i = (blockIdx.x*blockDim.x + threadIdx.x)*2;
+
+    // load into shared memory 2 at a time
+    sdata[t] = (i < n) ? in[i] : 0;
+    sdata[t+1] = (i + 1 < n) ? in[i + 1] : 0;
+
+    /*
+    __syncthreads();
+
+    int e;
+    if(blockIdx.x*blockDim.x + threadIdx.x == 0)
+    {
+       // printf("block size %d ", blockDim.x);
+        for(e = 0; e < blockDim.x*2; e ++)
+            printf("%5.0f ", sdata[e]);
+
+        printf("\n------------------------------------\n");
+
+    }
+    */
+    __syncthreads();
+    // do reduction in shared memory with tid plus s while cutting s in half each iteration
+    for (int s = blockDim.x; s >= 1; s/=2)
+    {
+        if (tid + s < s*2)
+        {
+            sdata[tid] += sdata[tid + s];
+        }
+        __syncthreads();
+
+        
+    }
+    // write result for this block to global mem
+    if (tid == 0) out[blockIdx.x] = sdata[0];
+}
+
 // Check if an int is power of 2
 int isPowerOfTwo (unsigned int x)
 {
@@ -147,7 +189,7 @@ void runCUDA( float *arr, int  n_old, int tile_width)
    }
    int num_block = ceil(n / (float)tile_width);
    printf("Num of blocks is %d\n", num_block);
-   dim3 block(tile_width, 1, 1);
+   dim3 block(tile_width/2, 1, 1);
    dim3 grid(num_block, 1, 1);
 
    // allocate storage for the device
@@ -177,7 +219,7 @@ void runCUDA( float *arr, int  n_old, int tile_width)
    cudaEventRecord(launch_begin,0);
    while( 1 )
    {
-       reduce2<<<grid, block, tile_width * sizeof(float)>>>(d_in, d_out, num_in);
+       reduce3<<<grid, block, tile_width * sizeof(float)>>>(d_in, d_out, num_in);
        check_cuda_errors(__FILE__, __LINE__);
        cudaDeviceSynchronize();
 
